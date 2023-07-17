@@ -453,6 +453,47 @@ WWProcessFtpW(
     return iStatus;
 }
 
+WW_PRIVATE
+INT
+WWPrepareFilePathW(
+    WW_PARAMSW* userParams,
+    WW_PRIVATEPARAMSW* privateParams
+)
+{
+    ZeroMemory(privateParams->fullFilePath, MAX_PATH);
+    if (NULL != userParams->dstPath)
+    {
+        wcsncpy(privateParams->fullFilePath, userParams->dstPath,
+            WW_STR_SYMSW(privateParams->fullFilePath));
+    }
+    if (NULL != userParams->outFileName)
+    {
+        if (NULL == privateParams->fullFilePath)
+        {
+            wcsncpy(privateParams->fullFilePath, userParams->outFileName,
+                WW_STR_SYMSW(privateParams->fullFilePath));
+        }
+        else
+        {
+            wcsncat(privateParams->fullFilePath, userParams->outFileName,
+                WW_STR_SYMSW(privateParams->fullFilePath));
+        }
+    }
+    else
+    {
+        if (NULL == privateParams->capturedFileName)
+        {
+            return WW_FAILURE;
+        }
+        else
+        {
+            wcsncat(privateParams->fullFilePath,
+                privateParams->capturedFileName,
+                WW_STR_SYMSW(privateParams->fullFilePath));
+        }
+    }
+    return WW_SUCCESS;
+}
 
 WW_PRIVATE
 INT
@@ -521,7 +562,7 @@ WWRetrieveDataW(
     DOUBLE remainingSize = (DOUBLE)pbar->szTotalInBytes;
     if (userParams->progressBarFlags & WW_PB_FILENAME)
     {
-        LPWSTR fileNamePtr = userParams->outFileName;
+        LPCWSTR fileNamePtr = userParams->outFileName;
         if (NULL == fileNamePtr)
         {
             fileNamePtr = privateParams->capturedFileName;
@@ -673,47 +714,7 @@ WWRetrieveDataW(
     return WW_SUCCESS;
 }
 
-WW_PRIVATE
-INT
-WWPrepareFilePathW(
-    WW_PARAMSW* userParams,
-    WW_PRIVATEPARAMSW* privateParams
-)
-{
-    ZeroMemory(privateParams->fullFilePath, MAX_PATH);
-    if (NULL != userParams->dstPath)
-    {
-        wcsncpy(privateParams->fullFilePath, userParams->dstPath,
-            WW_STR_SYMSW(privateParams->fullFilePath));
-    }
-    if (NULL != userParams->outFileName)
-    {
-        if (NULL == privateParams->fullFilePath)
-        {
-            wcsncpy(privateParams->fullFilePath, userParams->outFileName,
-                WW_STR_SYMSW(privateParams->fullFilePath));
-        }
-        else
-        {
-            wcsncat(privateParams->fullFilePath, userParams->outFileName,
-                WW_STR_SYMSW(privateParams->fullFilePath));
-        }
-    }
-    else
-    {
-        if (NULL == privateParams->capturedFileName)
-        {
-            return WW_FAILURE;
-        }
-        else
-        {
-            wcsncat(privateParams->fullFilePath,
-                privateParams->capturedFileName,
-                WW_STR_SYMSW(privateParams->fullFilePath));
-        }
-    }
-    return WW_SUCCESS;
-}
+
 
 
 WW_PRIVATE
