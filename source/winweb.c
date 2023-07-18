@@ -22,13 +22,8 @@ WWDownloadW(
             DWORD flags
            )
 {
-    DWORD defaultPbFlags =
-        WW_PB_PROGRESSBAR |
-        WW_PB_PERCENTAGE |
-        WW_PB_SPEED |
-        WW_PB_FILESIZE |
-        WW_PB_ETA |
-        WW_PB_FILENAME;
+    DWORD defaultPbFlags = WW_PB_PROGRESSBAR | WW_PB_PERCENTAGE | WW_PB_ETA |
+                           WW_PB_SPEED | WW_PB_FILESIZE | WW_PB_FILENAME;
 
     WW_PARAMSW userParams = {
         .status = WW_STATUS_INIT,
@@ -39,7 +34,7 @@ WWDownloadW(
         .userAgent = WW_DEFAULT_USER_AGENTW,
         .maxRedirectLimit = WW_DEFAULT_REDIRECT_LIMIT,
         .headerLength = WW_DEFAULT_HEADER_LENGTH,
-        .logEnabled = flags & WW_DISPLAY_LOG,
+        .logEnabled = flags & WW_SHOW_LOG,
         .progressBarEnabled = flags & WW_SHOW_PROGRESSBAR,
         .forceDownload = flags & WW_FORCE_DOWNLOAD,
         .progressBarFlags = defaultPbFlags,
@@ -100,10 +95,7 @@ WWDownloadExW(
     free(privateParams.szHeader);
     return iStatus;
 }
-
-
 /******************************** PRIVATE API *********************************/
-
 /**
  * @brief Unicode API implementation.
  */
@@ -230,10 +222,8 @@ WWProcessHttpW(
         return WW_FAILURE;
     }
 
-    DWORD dwFlags = INTERNET_FLAG_RELOAD |
-                    INTERNET_FLAG_NO_CACHE_WRITE |
-                    INTERNET_FLAG_NO_AUTO_REDIRECT |
-                    INTERNET_FLAG_NO_COOKIES |
+    DWORD dwFlags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE |
+                    INTERNET_FLAG_NO_AUTO_REDIRECT | INTERNET_FLAG_NO_COOKIES |
                     INTERNET_FLAG_NO_UI;
 
     if (INTERNET_SCHEME_HTTPS == ptrUrlC->nScheme)
@@ -532,7 +522,8 @@ WWRetrieveDataW(
     }
     CloseHandle(hFileN);
 
-    wcsncpy(filePathTemp, privateParams->fullFilePath, WW_STR_SYMSW(filePathTemp));
+    wcsncpy(filePathTemp, privateParams->fullFilePath, 
+            WW_STR_SYMSW(filePathTemp));
     wcsncat(filePathTemp, L"~", WW_STR_SYMSW(filePathTemp));
 
     HANDLE hf = CreateFileW(privateParams->fullFilePath, GENERIC_WRITE, 0, 
@@ -713,9 +704,6 @@ WWRetrieveDataW(
 
     return WW_SUCCESS;
 }
-
-
-
 
 WW_PRIVATE
 INT 

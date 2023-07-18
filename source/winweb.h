@@ -38,17 +38,17 @@ extern "C" {
 /**
  * @brief Constants for different flags.
  */
-#define WW_PB_PROGRESSBAR 0x00000001 // Show progress bar line
-#define WW_PB_SPEED       0x00000002 // Show download speed
-#define WW_PB_ETA         0x00000004 // Show ETA
-#define WW_PB_FILESIZE    0x00000008 // Show file size
-#define WW_PB_PERCENTAGE  0x00000010 // Show percentage
-#define WW_PB_ELAPSEDTIME 0x00000020 // Show elapsed time
-#define WW_PB_FILENAME    0x00000040 // Show filename
-#define WW_DISPLAY_LOG    0x00000080 // Display logs
-#define WW_FORCE_DOWNLOAD 0x00000100 // Re-download even when the file wasn't modified
+#define WW_PB_PROGRESSBAR   0x00000001 // Show progress bar line
+#define WW_PB_SPEED         0x00000002 // Show download speed
+#define WW_PB_ETA           0x00000004 // Show ETA
+#define WW_PB_FILESIZE      0x00000008 // Show file size
+#define WW_PB_PERCENTAGE    0x00000010 // Show percentage
+#define WW_PB_ELAPSEDTIME   0x00000020 // Show elapsed time
+#define WW_PB_FILENAME      0x00000040 // Show filename
+#define WW_SHOW_LOG         0x00000080 // Display logs
+#define WW_FORCE_DOWNLOAD   0x00000100 // Re-download even when the file wasn't modified
 #define WW_SHOW_PROGRESSBAR 0x00000110
-#define WW_FLAGS_DEFAULT  NULL
+#define WW_FLAGS_DEFAULT    NULL
 
 /**
 * @brief Enumerations for different error codes.
@@ -97,10 +97,10 @@ typedef struct {
 typedef struct {
     INT status;                       /**< Work status */
     INT errorcode;                    /**< Stores error code */
-    LPCSTR url;                       /**< URL of the file to download */
-    LPCSTR dstPath;                   /**< Destination path for the downloaded file */
-    LPCSTR outFileName;               /**< Output file name */
-    LPCSTR userAgent;                 /**< User agent string */
+    LPSTR url;                        /**< URL of the file to download */
+    LPSTR dstPath;                    /**< Destination path for the downloaded file */
+    LPSTR outFileName;                /**< Output file name */
+    LPSTR userAgent;                  /**< User agent string */
     UINT maxRedirectLimit;            /**< Maximum redirect limit */
     UINT headerLength;                /**< Length of additional header */
     INT logEnabled;                   /**< Flag to enable/disable logging */
@@ -116,10 +116,10 @@ typedef struct {
 typedef struct {
     INT status;                       /**< Work status */
     INT errorcode;                    /**< Stores error code */
-    LPCWSTR url;                      /**< URL of the file to download */
-    LPCWSTR dstPath;                  /**< Destination path for the downloaded file */
-    LPCWSTR outFileName;              /**< Output file name */
-    LPCWSTR userAgent;                /**< User agent string */
+    LPWSTR url;                       /**< URL of the file to download */
+    LPWSTR dstPath;                   /**< Destination path for the downloaded file */
+    LPWSTR outFileName;               /**< Output file name */
+    LPWSTR userAgent;                 /**< User agent string */
     UINT maxRedirectLimit;            /**< Maximum redirect limit */
     UINT headerLength;                /**< Length of additional header */
     INT logEnabled;                   /**< Flag to enable/disable logging */
