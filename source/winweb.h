@@ -46,9 +46,9 @@ extern "C" {
 #define WW_PB_ELAPSEDTIME   0x00000020 // Show elapsed time
 #define WW_PB_FILENAME      0x00000040 // Show filename
 #define WW_SHOW_LOG         0x00000080 // Display logs
-#define WW_FORCE_DOWNLOAD   0x00000100 // Re-download even when the file wasn't modified
-#define WW_SHOW_PROGRESSBAR 0x00000110
-#define WW_FLAGS_DEFAULT    NULL
+#define WW_FORCE_DOWNLOAD   0x00000100 // Ignore if file wasn't modified
+#define WW_SHOW_PROGRESSBAR 0x00000110 // Show progress bar information
+#define WW_FLAGS_DEFAULT    NULL       // No extra flags
 
 /**
 * @brief Enumerations for different error codes.
