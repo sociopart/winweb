@@ -140,7 +140,7 @@ typedef struct {
  * @param flags Additional flags.
  * @return 0 (WW_SUCCESS) on success, or 1 (WW_FAILURE) on failure.
  */
-INT WWDownloadA(LPCSTR url, LPCSTR path, LPCSTR out_filename, DWORD flags);
+INT WWDownloadA(LPCSTR url, LPCSTR path, LPCSTR outFileName, DWORD flags);
 
 /**
  * @brief Function to download a file (Unicode version).
@@ -148,12 +148,24 @@ INT WWDownloadA(LPCSTR url, LPCSTR path, LPCSTR out_filename, DWORD flags);
  * This function downloads a file from the specified URL and saves it to the provided destination path.
  *
  * @param url The URL of the file to download.
- * @param dstPath The destination path for the downloaded file.
- * @param out_filename The output file name.
+ * @param fullFilePath The destination path for the downloaded file (including extension).
  * @param flags Additional flags.
  * @return 0 (WW_SUCCESS) on success, or 1 (WW_FAILURE) on failure.
  */
-INT WWDownloadW(LPCWSTR url, LPCWSTR path, LPCWSTR out_filename, DWORD flags);
+
+INT WWDownloadW(LPCWSTR url, LPCWSTR fullFilePath, DWORD flags);
+/**
+ * @brief Function to download a file as specific filename (Unicode version).
+ *
+ * This function downloads a file from the specified URL and saves it to the provided destination path.
+ *
+ * @param url The URL of the file to download.
+ * @param dstPath The destination path for the downloaded file.
+ * @param outFileName The output file name.
+ * @param flags Additional flags.
+ * @return 0 (WW_SUCCESS) on success, or 1 (WW_FAILURE) on failure.
+ */
+INT WWDownloadAsW(LPCWSTR url, LPCWSTR path, LPCWSTR outFileName, DWORD flags);
 
 /**
  * @brief Function to download a file with extended parameters (ANSI version).

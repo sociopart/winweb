@@ -140,13 +140,62 @@ WWIsFileModified(HANDLE hFileN, LONGLONG fileSize,
                  CONST FILETIME* pftLastWriteTime);
 
 /******************************** PUBLIC API **********************************/
-INT 
+
+INT
 WWDownloadW(
-            LPCWSTR url, 
-            LPCWSTR dstPath, 
-            LPCWSTR outFileName, 
-            DWORD flags
-           )
+    LPCWSTR url,
+    LPCWSTR fullFilePath,
+    DWORD flags
+)
+{
+    DWORD defaultPbFlags = WW_PB_PROGRESSBAR | WW_PB_PERCENTAGE | WW_PB_ETA |
+        WW_PB_SPEED | WW_PB_FILESIZE | WW_PB_FILENAME;
+
+
+    WW_PARAMSW userParams = {
+        .status = WW_STATUS_INIT,
+        .errorcode = WW_ERR_NOERROR,
+        .url = url,
+        .dstPath = NULL,
+        .outFileName = NULL,
+        .userAgent = WW_DEFAULT_USER_AGENTW,
+        .maxRedirectLimit = WW_DEFAULT_REDIRECT_LIMIT,
+        .headerLength = WW_DEFAULT_HEADER_LENGTH,
+        .logEnabled = flags & WW_SHOW_LOG,
+        .progressBarEnabled = flags & WW_SHOW_PROGRESSBAR,
+        .forceDownload = flags & WW_FORCE_DOWNLOAD,
+        .progressBarFlags = defaultPbFlags,
+        .progressBarData = {
+            .ulTimeElapsedInSecs = 0,
+            .szDownloadedInBytes = 0,
+            .szTotalInBytes = 0,
+            .dETAInSecs = 0
+        }
+    };
+
+    // Extract filename and crop dstPath to needed states.
+    CONST WCHAR* extractedFileName = wcsrchr(fullFilePath, L'\\') + 1;
+    size_t dirPathLength = extractedFileName - fullFilePath;
+    WCHAR* newPath = (WCHAR*)malloc(dirPathLength + 1);
+    if (newPath == NULL)
+    {
+        return WW_FAILURE;
+    }
+    wcsncpy(newPath, fullFilePath, dirPathLength + 1);
+    newPath[dirPathLength] = '\0'; // Null-terminate the directory path
+    userParams.dstPath = newPath;
+    userParams.outFileName = extractedFileName;
+
+    return WWDownloadExW(&userParams);
+}
+
+INT
+WWDownloadAsW(
+    LPCWSTR url,
+    LPCWSTR dstPath,
+    LPCWSTR outFileName,
+    DWORD flags
+)
 {
     DWORD defaultPbFlags = WW_PB_PROGRESSBAR | WW_PB_PERCENTAGE | WW_PB_ETA |
                            WW_PB_SPEED | WW_PB_FILESIZE | WW_PB_FILENAME;
@@ -171,13 +220,14 @@ WWDownloadW(
             .dETAInSecs = 0
         }
     };
+
     return WWDownloadExW(&userParams);
 }
 
-INT 
+INT
 WWDownloadExW(
-              WW_PARAMSW* userParams
-             ) 
+                WW_PARAMSW* userParams
+             )
 {
     SIZE_T headerSizeTemp = userParams->headerLength * sizeof(LPWSTR);
     WW_PRIVATEPARAMSW privateParams = {
@@ -187,31 +237,32 @@ WWDownloadExW(
     };
 
     // Check if memory allocation failed
-    if (NULL == privateParams.szHeader) {
+    if (NULL == privateParams.szHeader) 
+    {
         userParams->errorcode = WW_ERR_MALLOC;
         return WW_FAILURE;
     }
 
     ZeroMemory(privateParams.szHeader, userParams->headerLength);
 
-    
-    if (NULL == userParams->url) 
+
+    if (NULL == userParams->url)
     {
         userParams->status = WW_STATUS_ERROR;
         return WW_FAILURE;
     }
 
-    if (NULL == userParams->userAgent) 
+    if (NULL == userParams->userAgent)
     {
         userParams->userAgent = WW_DEFAULT_USER_AGENTW;
     }
 
-    if (0 > userParams->maxRedirectLimit) 
+    if (0 > userParams->maxRedirectLimit)
     {
         userParams->maxRedirectLimit = WW_DEFAULT_REDIRECT_LIMIT;
     }
 
-    if (0 >= userParams->headerLength) 
+    if (0 >= userParams->headerLength)
     {
         userParams->headerLength = WW_DEFAULT_HEADER_LENGTH;
     }
@@ -444,6 +495,7 @@ WWProcessHttpW(
             break;
     }
 
+
     // Try to get filename and path from URL contents
     if (WW_FAILURE == \
             WWMakeDownloadPathW(ptrUrlC->lpszUrlPath, 
@@ -538,18 +590,18 @@ WWProcessFtpW(
     WIN32_FIND_DATAW finddata;
     HINTERNET hFind = FtpFindFirstFileW(hConn, ptrUrlC->lpszUrlPath,
                                         &finddata, 0, 0);
-    if (NULL != hFind) 
+    if (NULL != hFind)
     {
         InternetCloseHandle(hFind);
     }
-    else 
+    else
     {
         return WW_FAILURE;
     }
 
     HINTERNET hFile = FtpOpenFileW(hConn, ptrUrlC->lpszUrlPath, GENERIC_READ,
                                    FTP_TRANSFER_TYPE_BINARY, 0);
-    if (NULL == hFile) 
+    if (NULL == hFile)
     {
         WWLogW(userParams->logEnabled, WW_LOG_WININET, NULL);
         return WW_FAILURE;
@@ -557,11 +609,11 @@ WWProcessFtpW(
 
     LARGE_INTEGER liFileSize = { finddata.nFileSizeLow, 0 };
 
-    wcsncpy(privateParams->capturedFileName, finddata.cFileName, 
+    wcsncpy(privateParams->capturedFileName, finddata.cFileName,
             WW_COUNTOF(privateParams->capturedFileName));
 
-    INT iStatus = WWRetrieveDataW(hFile, liFileSize.QuadPart, 
-                                  &finddata.ftLastWriteTime, 
+    INT iStatus = WWRetrieveDataW(hFile, liFileSize.QuadPart,
+                                  &finddata.ftLastWriteTime,
                                   userParams, privateParams);
 
     InternetCloseHandle(hFile);
@@ -677,27 +729,27 @@ WWRetrieveDataW(
 
     DOUBLE averageSpeed = 0.0;
     DOUBLE remainingSize = (DOUBLE)pbar->szTotalInBytes;
+    LPCWSTR fileNamePtr = NULL;
     if (userParams->progressBarFlags & WW_PB_FILENAME)
     {
-        LPCWSTR fileNamePtr = userParams->outFileName;
+        fileNamePtr = userParams->outFileName;
         if (NULL == fileNamePtr)
         {
             fileNamePtr = privateParams->capturedFileName;
         }
-        wprintf(L"%s\n", fileNamePtr);
     }
-    while (TRUE) 
+    while (TRUE)
     {
         ZeroMemory(bufRead, sizeof(bufRead));
         retRead = InternetReadFile(hFile, bufRead, sizeof(bufRead), &bytesRead);
-        if (retRead) 
+        if (retRead)
         {
-            if (bytesRead == 0) 
+            if (bytesRead == 0)
             {
                 break;
             }
         }
-        else 
+        else
         {
             WWLogW(userParams->logEnabled, WW_LOG_WININET, NULL);
             CloseHandle(hft);
@@ -706,7 +758,7 @@ WWRetrieveDataW(
         }
 
         if ((FALSE == WriteFile(hft, bufRead, bytesRead, &byteWrite, NULL)) ||
-                                bytesRead != byteWrite) 
+            bytesRead != byteWrite)
         {
             WWLogW(userParams->logEnabled, WW_LOG_MODULE, NULL);
             CloseHandle(hft);
@@ -723,21 +775,22 @@ WWRetrieveDataW(
 
         WCHAR progressbar[64];
         ZeroMemory(progressbar, sizeof(progressbar));
-        for (INT i = 0; i < 40; i++) 
+        progressbar[0] = L'[';
+        for (INT i = 1; i < 24; i++)
         {
-            if (ratio / 250 > i)
+            if (ratio / 350 > i)
             {
                 progressbar[i] = L'#';
             }
-            else 
+            else
             {
                 progressbar[i] = L'-';
             }
         }
-
+        progressbar[24] = L']';
         GetSystemTimeAsFileTime(&st1);
         ULONGLONG difftime = ((PULARGE_INTEGER)&st1)->QuadPart - \
-                              ((PULARGE_INTEGER)&st0)->QuadPart;
+            ((PULARGE_INTEGER)&st0)->QuadPart;
         if ((difftime >= 10000000) || ((ratio != 0) && (ratio % 10000 == 0)))
         {
             DOUBLE diffsize =
@@ -765,13 +818,17 @@ WWRetrieveDataW(
             INT etaSeconds = (INT)(pbar->dETAInSecs - (etaHours * 3600) - (etaMinutes * 60));
 
             wprintf(L"\r");
+            if (userParams->progressBarFlags & WW_PB_FILENAME)
+            {
+                wprintf(L"%s ", fileNamePtr);
+            }
             if (userParams->progressBarFlags & WW_PB_PROGRESSBAR)
             {
-                wprintf(L"%s", progressbar);
+                wprintf(L"%s ", progressbar);
             }
             if (userParams->progressBarFlags & WW_PB_PERCENTAGE)
             {
-                wprintf(L" %3d.%02d%%;",
+                wprintf(L"%3d.%02d%%; ",
                     (ratio - (ratio % 100)) / 100, (ratio % 100));
             }
             if (userParams->progressBarFlags & WW_PB_FILESIZE)
@@ -791,25 +848,25 @@ WWRetrieveDataW(
             }
             if (userParams->progressBarFlags & WW_PB_SPEED)
             {
-                wprintf(L"%6.2f%s/s",
+                wprintf(L"%6.2f%s/s; ",
                     diffsize / sizeUnitW[speedUnitIndex].size,
                     sizeUnitW[speedUnitIndex].unit);
             }
             if (userParams->progressBarFlags & WW_PB_ETA)
             {
-                wprintf(L" ETA: %02d:%02d:%02d", 
-                        etaHours, etaMinutes, etaSeconds);
+                wprintf(L"ETA: %02d:%02d:%02d ",
+                    etaHours, etaMinutes, etaSeconds);
             }
-            
+
             szDownloadedPrev = pbar->szDownloadedInBytes;
         }
     }
 
     wprintf(L"\n\n");
 
-    if (pftLastModified != NULL) 
+    if (pftLastModified != NULL)
     {
-        if (SetFileTime(hft, NULL, NULL, pftLastModified) == FALSE) 
+        if (SetFileTime(hft, NULL, NULL, pftLastModified) == FALSE)
         {
             WWLogW(userParams->logEnabled, WW_LOG_MODULE, NULL);
             CloseHandle(hft);
@@ -822,7 +879,7 @@ WWRetrieveDataW(
     CloseHandle(hf);
 
     if (MoveFileExW(filePathTemp, privateParams->fullFilePath,
-        MOVEFILE_REPLACE_EXISTING) == FALSE) 
+        MOVEFILE_REPLACE_EXISTING) == FALSE)
     {
         WWLogW(userParams->logEnabled, WW_LOG_MODULE, NULL);
         return WW_FAILURE;
@@ -840,7 +897,7 @@ WWMakeDownloadPathW(
                    ) 
 {
     LPCWSTR fnurl = wcsrchr(url, L'/');
-    if (fnurl == NULL || wcslen(fnurl) == 1) 
+    if (fnurl == NULL || wcslen(fnurl) == 1)
     {
         wprintf(L"ERROR : local path\n");
         return WW_FAILURE;
@@ -849,21 +906,20 @@ WWMakeDownloadPathW(
     path[len - 1] = L'\0';
 
     LPWSTR ppath = wcschr(path, L'?');
-    if (ppath != NULL) 
+    if (ppath != NULL)
     {
         *ppath = L'\0';
     }
 
     // Preferred File Name
     LPWSTR pfname = path;
-    while ((pfname = wcspbrk(pfname, L"\\/:*?\"<>|")) != NULL) 
+    while ((pfname = wcspbrk(pfname, L"\\/:*?\"<>|")) != NULL)
     {
         *pfname = L'_';
     }
 
     return WW_SUCCESS;
 }
-
 
 WW_PRIVATE
 INT
