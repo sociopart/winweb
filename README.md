@@ -18,6 +18,8 @@ Goals of this project:
 - Be flexible. But you still do plenty of things, such as displaying raw HTTP
   headers, showing log, customising the progressbar look... Thousands of them!
 
+> NOTE: Documentation and examples are generated through AI.
+
 Feel free to use and contribute! 
 
 ## Downloading the source code

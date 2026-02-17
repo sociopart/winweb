@@ -2,8 +2,8 @@
  * @file winweb.h
  * @brief Header file for the WinWeb library.
  * @authors SASAKI Nobuyuki, Ivan Korolev
- * @version 0.5b
- * @date 2022-2023
+ * @version 0.666
+ * @date 2022-2026
  * @note MIT License
  *
  * This header file provides functions and definitions to interact with the 
@@ -92,15 +92,24 @@ typedef struct {
 } WWPBARINFO;
 
 /**
+ * @brief Callback function type for download progress reporting.
+ *
+ * @param pProgressData Pointer to progress bar information.
+ * @param pUserData     User-provided context pointer.
+ */
+typedef VOID (*WW_PROGRESS_CALLBACK)(CONST WWPBARINFO* pProgressData,
+                                     LPVOID pUserData);
+
+/**
  * @brief Structure representing parameters for the WinWeb library functions (ANSI version).
  */
 typedef struct {
     INT status;                       /**< Work status */
     INT errorcode;                    /**< Stores error code */
-    LPSTR url;                        /**< URL of the file to download */
-    LPSTR dstPath;                    /**< Destination path for the downloaded file */
-    LPSTR outFileName;                /**< Output file name */
-    LPSTR userAgent;                  /**< User agent string */
+    LPCSTR url;                       /**< URL of the file to download */
+    LPCSTR dstPath;                   /**< Destination path for the downloaded file */
+    LPCSTR outFileName;               /**< Output file name */
+    LPCSTR userAgent;                 /**< User agent string */
     UINT maxRedirectLimit;            /**< Maximum redirect limit */
     UINT headerLength;                /**< Length of additional header */
     INT logEnabled;                   /**< Flag to enable/disable logging */
@@ -108,6 +117,8 @@ typedef struct {
     INT forceDownload;                /**< Flag to enable/disable force downloading */
     DWORD progressBarFlags;           /**< Progress bar flags */
     WWPBARINFO progressBarData;       /**< Structure for progress bar data */
+    WW_PROGRESS_CALLBACK progressCallback; /**< Optional progress callback */
+    LPVOID pCallbackData;             /**< User context for progress callback */
 } WW_PARAMSA;
 
 /**
@@ -116,10 +127,10 @@ typedef struct {
 typedef struct {
     INT status;                       /**< Work status */
     INT errorcode;                    /**< Stores error code */
-    LPWSTR url;                       /**< URL of the file to download */
-    LPWSTR dstPath;                   /**< Destination path for the downloaded file */
-    LPWSTR outFileName;               /**< Output file name */
-    LPWSTR userAgent;                 /**< User agent string */
+    LPCWSTR url;                      /**< URL of the file to download */
+    LPCWSTR dstPath;                  /**< Destination path for the downloaded file */
+    LPCWSTR outFileName;              /**< Output file name */
+    LPCWSTR userAgent;                /**< User agent string */
     UINT maxRedirectLimit;            /**< Maximum redirect limit */
     UINT headerLength;                /**< Length of additional header */
     INT logEnabled;                   /**< Flag to enable/disable logging */
@@ -127,7 +138,59 @@ typedef struct {
     INT forceDownload;                /**< Flag to enable/disable force downloading */
     DWORD progressBarFlags;           /**< Progress bar flags */
     WWPBARINFO progressBarData;       /**< Progress bar data */
+    WW_PROGRESS_CALLBACK progressCallback; /**< Optional progress callback */
+    LPVOID pCallbackData;             /**< User context for progress callback */
 } WW_PARAMSW;
+
+/**
+ * @brief Structure representing an HTTP response (ANSI version).
+ */
+typedef struct {
+    DWORD statusCode;                 /**< HTTP status code */
+    LPBYTE data;                      /**< Response body (library-allocated) */
+    SIZE_T dataSize;                  /**< Size of response body in bytes */
+    INT errorcode;                    /**< Error code on failure */
+} WW_RESPONSEA;
+
+/**
+ * @brief Structure representing an HTTP response (Unicode version).
+ */
+typedef struct {
+    DWORD statusCode;                 /**< HTTP status code */
+    LPBYTE data;                      /**< Response body (library-allocated) */
+    SIZE_T dataSize;                  /**< Size of response body in bytes */
+    INT errorcode;                    /**< Error code on failure */
+} WW_RESPONSEW;
+
+/**
+ * @brief Structure representing an HTTP request (ANSI version).
+ */
+typedef struct {
+    LPCSTR url;                       /**< Request URL */
+    LPCSTR verb;                      /**< HTTP method (GET, POST, PUT, DELETE, etc.) */
+    LPCSTR userAgent;                 /**< User agent string */
+    LPCSTR contentType;               /**< Content-Type header for POST/PUT */
+    LPCVOID body;                     /**< Request body data */
+    DWORD bodySize;                   /**< Size of request body in bytes */
+    LPCSTR headers;                   /**< Additional custom headers */
+    UINT maxRedirectLimit;            /**< Maximum redirect limit */
+    BOOL logEnabled;                  /**< Flag to enable/disable logging */
+} WW_REQUESTA;
+
+/**
+ * @brief Structure representing an HTTP request (Unicode version).
+ */
+typedef struct {
+    LPCWSTR url;                      /**< Request URL */
+    LPCWSTR verb;                     /**< HTTP method (GET, POST, PUT, DELETE, etc.) */
+    LPCWSTR userAgent;                /**< User agent string */
+    LPCWSTR contentType;              /**< Content-Type header for POST/PUT */
+    LPCVOID body;                     /**< Request body data */
+    DWORD bodySize;                   /**< Size of request body in bytes */
+    LPCWSTR headers;                  /**< Additional custom headers */
+    UINT maxRedirectLimit;            /**< Maximum redirect limit */
+    BOOL logEnabled;                  /**< Flag to enable/disable logging */
+} WW_REQUESTW;
 
 /**
  * @brief Function to download a file (ANSI version).
@@ -186,6 +249,42 @@ INT WWDownloadExA(WW_PARAMSA* params);
  * @return 0 (WW_SUCCESS) on success, or 1 (WW_FAILURE) on failure.
  */
 INT WWDownloadExW(WW_PARAMSW* params);
+
+/**
+ * @brief Perform an HTTP request (ANSI version).
+ *
+ * Pass NULL for body to send a GET request.
+ */
+INT WWQueryA(LPCSTR url, LPCSTR verb, LPCVOID body, DWORD bodySize,
+             LPCSTR contentType, WW_RESPONSEA* response);
+
+/**
+ * @brief Perform an HTTP request (Unicode version).
+ *
+ * Pass NULL for body to send a GET request.
+ */
+INT WWQueryW(LPCWSTR url, LPCWSTR verb, LPCVOID body, DWORD bodySize,
+             LPCWSTR contentType, WW_RESPONSEW* response);
+
+/**
+ * @brief Perform an HTTP request with extended parameters (ANSI version).
+ */
+INT WWQueryExA(WW_REQUESTA* request, WW_RESPONSEA* response);
+
+/**
+ * @brief Perform an HTTP request with extended parameters (Unicode version).
+ */
+INT WWQueryExW(WW_REQUESTW* request, WW_RESPONSEW* response);
+
+/**
+ * @brief Free response data allocated by query functions (ANSI version).
+ */
+VOID WWFreeResponseA(WW_RESPONSEA* response);
+
+/**
+ * @brief Free response data allocated by query functions (Unicode version).
+ */
+VOID WWFreeResponseW(WW_RESPONSEW* response);
 
 #ifdef __cplusplus
 }
