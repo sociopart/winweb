@@ -824,14 +824,15 @@ WWProcessHttpW(
         }
     }
 
-    // Retrieve the content length
-    dwQueryLength = sizeof(privateParams->szHeader);
+    // Content-Length is optional (absent with chunked transfer / CDN responses).
+    // If the header is missing, lDataLength stays 0 and the download still proceeds;
+    // the progress callback will receive total=0 in that case.
     LONGLONG lDataLength = 0;
-    DWORD bufferSize = sizeof(lDataLength);
-    DWORD clFlags = HTTP_QUERY_CONTENT_LENGTH | HTTP_QUERY_FLAG_NUMBER;
-    if (FALSE == HttpQueryInfoW(hReq, clFlags, &lDataLength, &bufferSize, NULL))
     {
-        return WW_FAILURE;
+        DWORD dwCL = 0, dwCLSize = sizeof(dwCL);
+        if (HttpQueryInfoW(hReq, HTTP_QUERY_CONTENT_LENGTH | HTTP_QUERY_FLAG_NUMBER,
+                           &dwCL, &dwCLSize, NULL))
+            lDataLength = (LONGLONG)dwCL;
     }
     FILETIME ftLastModified = WW_STRUCT_NULL;
     SYSTEMTIME stLastModified = WW_STRUCT_NULL;
@@ -973,21 +974,27 @@ WWRetrieveDataW(
         return WW_FAILURE;
     }
 
-    HANDLE hFileN = CreateFileW(privateParams->fullFilePath, GENERIC_READ, 
-                                0, NULL, OPEN_EXISTING, 
-                                FILE_ATTRIBUTE_NORMAL, 0);
-    if (FALSE == WWIsFileModified(hFileN, fileSize, pftLastModified))
+    if (!userParams->forceDownload)
     {
+        HANDLE hFileN = CreateFileW(privateParams->fullFilePath, GENERIC_READ,
+                                    0, NULL, OPEN_EXISTING,
+                                    FILE_ATTRIBUTE_NORMAL, 0);
+        if (FALSE == WWIsFileModified(hFileN, fileSize, pftLastModified))
+        {
+            CloseHandle(hFileN);
+            return WW_SUCCESS;
+        }
         CloseHandle(hFileN);
-        return WW_SUCCESS;
     }
-    CloseHandle(hFileN);
 
-    wcsncpy(filePathTemp, privateParams->fullFilePath, 
+    wcsncpy(filePathTemp, privateParams->fullFilePath,
             WW_STR_SYMSW(filePathTemp));
     wcsncat(filePathTemp, L"~", WW_STR_SYMSW(filePathTemp));
 
-    HANDLE hf = CreateFileW(privateParams->fullFilePath, GENERIC_WRITE, 0, 
+    if (userParams->forceDownload)
+        SetFileAttributesW(privateParams->fullFilePath, FILE_ATTRIBUTE_NORMAL);
+
+    HANDLE hf = CreateFileW(privateParams->fullFilePath, GENERIC_WRITE, 0,
                             NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
     if (INVALID_HANDLE_VALUE == hf) 
     {
@@ -1166,6 +1173,12 @@ WWRetrieveDataW(
 
     CloseHandle(hft);
     CloseHandle(hf);
+
+    if (userParams->forceDownload)
+    {
+        SetFileAttributesW(privateParams->fullFilePath, FILE_ATTRIBUTE_NORMAL);
+        DeleteFileW(privateParams->fullFilePath);
+    }
 
     if (MoveFileExW(filePathTemp, privateParams->fullFilePath,
         MOVEFILE_REPLACE_EXISTING) == FALSE)
@@ -2090,14 +2103,15 @@ WWProcessHttpA(
         }
     }
 
-    // Content length
+    // Content-Length is optional (absent with chunked transfer / CDN responses).
+    // If the header is missing, lDataLength stays 0 and the download still proceeds;
+    // the progress callback will receive total=0 in that case.
     LONGLONG lDataLength = 0;
-    DWORD bufferSize = sizeof(lDataLength);
-    DWORD clFlags = HTTP_QUERY_CONTENT_LENGTH | HTTP_QUERY_FLAG_NUMBER;
-    if (FALSE == HttpQueryInfoA(hReq, clFlags, &lDataLength, &bufferSize, NULL))
     {
-        InternetCloseHandle(hReq);
-        return WW_FAILURE;
+        DWORD dwCL = 0, dwCLSize = sizeof(dwCL);
+        if (HttpQueryInfoA(hReq, HTTP_QUERY_CONTENT_LENGTH | HTTP_QUERY_FLAG_NUMBER,
+                           &dwCL, &dwCLSize, NULL))
+            lDataLength = (LONGLONG)dwCL;
     }
 
     FILETIME ftLastModified = WW_STRUCT_NULL;
@@ -2187,19 +2201,25 @@ WWRetrieveDataA(
         return WW_FAILURE;
     }
 
-    HANDLE hFileN = CreateFileA(privateParams->fullFilePath, GENERIC_READ,
-                                 0, NULL, OPEN_EXISTING,
-                                 FILE_ATTRIBUTE_NORMAL, 0);
-    if (FALSE == WWIsFileModified(hFileN, fileSize, pftLastModified))
+    if (!userParams->forceDownload)
     {
+        HANDLE hFileN = CreateFileA(privateParams->fullFilePath, GENERIC_READ,
+                                     0, NULL, OPEN_EXISTING,
+                                     FILE_ATTRIBUTE_NORMAL, 0);
+        if (FALSE == WWIsFileModified(hFileN, fileSize, pftLastModified))
+        {
+            CloseHandle(hFileN);
+            return WW_SUCCESS;
+        }
         CloseHandle(hFileN);
-        return WW_SUCCESS;
     }
-    CloseHandle(hFileN);
 
     strncpy(filePathTemp, privateParams->fullFilePath,
             WW_STR_SYMSA_BUF(filePathTemp));
     strncat(filePathTemp, "~", WW_STR_SYMSA_BUF(filePathTemp));
+
+    if (userParams->forceDownload)
+        SetFileAttributesA(privateParams->fullFilePath, FILE_ATTRIBUTE_NORMAL);
 
     HANDLE hf = CreateFileA(privateParams->fullFilePath, GENERIC_WRITE, 0,
                              NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
@@ -2376,6 +2396,12 @@ WWRetrieveDataA(
 
     CloseHandle(hft);
     CloseHandle(hf);
+
+    if (userParams->forceDownload)
+    {
+        SetFileAttributesA(privateParams->fullFilePath, FILE_ATTRIBUTE_NORMAL);
+        DeleteFileA(privateParams->fullFilePath);
+    }
 
     if (MoveFileExA(filePathTemp, privateParams->fullFilePath,
         MOVEFILE_REPLACE_EXISTING) == FALSE)
