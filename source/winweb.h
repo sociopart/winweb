@@ -119,6 +119,7 @@ typedef struct {
     WWPBARINFO progressBarData;       /**< Structure for progress bar data */
     WW_PROGRESS_CALLBACK progressCallback; /**< Optional progress callback */
     LPVOID pCallbackData;             /**< User context for progress callback */
+    const volatile BOOL* pCancelFlag; /**< Optional pointer to a cancellation flag; set to TRUE to abort download */
 } WW_PARAMSA;
 
 /**
@@ -140,6 +141,7 @@ typedef struct {
     WWPBARINFO progressBarData;       /**< Progress bar data */
     WW_PROGRESS_CALLBACK progressCallback; /**< Optional progress callback */
     LPVOID pCallbackData;             /**< User context for progress callback */
+    const volatile BOOL* pCancelFlag; /**< Optional pointer to a cancellation flag; set to TRUE to abort download */
 } WW_PARAMSW;
 
 /**

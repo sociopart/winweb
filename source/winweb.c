@@ -1030,6 +1030,13 @@ WWRetrieveDataW(
     }
     while (TRUE)
     {
+        if (userParams->pCancelFlag && *userParams->pCancelFlag)
+        {
+            CloseHandle(hft);
+            CloseHandle(hf);
+            return WW_FAILURE;
+        }
+
         ZeroMemory(bufRead, sizeof(bufRead));
         retRead = InternetReadFile(hFile, bufRead, sizeof(bufRead), &bytesRead);
         if (retRead)
@@ -2255,6 +2262,13 @@ WWRetrieveDataA(
     }
     while (TRUE)
     {
+        if (userParams->pCancelFlag && *userParams->pCancelFlag)
+        {
+            CloseHandle(hft);
+            CloseHandle(hf);
+            return WW_FAILURE;
+        }
+
         ZeroMemory(bufRead, sizeof(bufRead));
         retRead = InternetReadFile(hFile, bufRead, sizeof(bufRead), &bytesRead);
         if (retRead)
