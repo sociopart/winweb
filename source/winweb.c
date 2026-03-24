@@ -694,12 +694,24 @@ WWProcessHttpW(
     // Set the accept types for the HTTP request
     LPCWSTR rgpszAcceptTypes[] = { L"*/*", NULL };
 
+    // Build optional Range header for resuming a partial download
+    WCHAR rangeHeader[64] = L"";
+    DWORD rangeHeaderLen  = 0;
+    if (userParams->resumeOffset > 0)
+    {
+        _snwprintf_s(rangeHeader, _countof(rangeHeader), _TRUNCATE,
+                     L"Range: bytes=%I64u-\r\n", userParams->resumeOffset);
+        rangeHeaderLen = (DWORD)wcslen(rangeHeader);
+    }
+
     // Open an HTTP request handle and send the request
-    HINTERNET hReq = HttpOpenRequestW(hConn, NULL, 
-                                      ptrUrlC->lpszUrlPath, NULL, NULL, 
+    HINTERNET hReq = HttpOpenRequestW(hConn, NULL,
+                                      ptrUrlC->lpszUrlPath, NULL, NULL,
                                       rgpszAcceptTypes, dwFlags, 0);
 
-    if (NULL == hReq || FALSE == HttpSendRequestW(hReq, NULL, 0, NULL, 0))
+    if (NULL == hReq || FALSE == HttpSendRequestW(hReq,
+            rangeHeaderLen > 0 ? rangeHeader : NULL,
+            rangeHeaderLen, NULL, 0))
     {
         userParams->errorcode = WW_ERR_HTTP_REQUEST;
         WWLogW(userParams->logEnabled, WW_LOG_WININET, NULL);
@@ -748,7 +760,10 @@ WWProcessHttpW(
     // Handle different HTTP status codes
     switch (dwStatusCode)
     {
-        case HTTP_STATUS_OK:
+        case HTTP_STATUS_OK:            // 200 - server may have ignored Range
+            userParams->resumeOffset = 0;
+            break;
+        case 206:                       // HTTP_STATUS_PARTIAL_CONTENT - resume honoured
             break;
         case HTTP_STATUS_MOVED:
         case HTTP_STATUS_REDIRECT:
@@ -962,9 +977,9 @@ WWRetrieveDataW(
     DWORD bytesRead, byteWrite;
     INT ratio = 0;
     WWPBARINFO* pbar = &userParams->progressBarData;
-    pbar->szTotalInBytes = fileSize;
-    pbar->szDownloadedInBytes = 0;
-    LONGLONG szDownloadedPrev = 0;
+    pbar->szTotalInBytes      = fileSize + (LONGLONG)userParams->resumeOffset;
+    pbar->szDownloadedInBytes = (LONGLONG)userParams->resumeOffset;
+    LONGLONG szDownloadedPrev = (LONGLONG)userParams->resumeOffset;
     FILETIME st, st0, st1;
     WCHAR speed[32] = { L'\0' };
     WCHAR filePathTemp[MAX_PATH] = L"";
@@ -1003,8 +1018,40 @@ WWRetrieveDataW(
         return WW_FAILURE;
     }
 
-    HANDLE hft = CreateFileW(filePathTemp, GENERIC_WRITE, 0, NULL, 
-                             CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    // When resumeOffset > 0, try to open existing partial temp file and seek to offset.
+    // If the temp file is missing or has unexpected size, fall back to a fresh download.
+    HANDLE hft = INVALID_HANDLE_VALUE;
+    if (userParams->resumeOffset > 0)
+    {
+        hft = CreateFileW(filePathTemp, GENERIC_WRITE, 0, NULL,
+                          OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+        if (INVALID_HANDLE_VALUE != hft)
+        {
+            LARGE_INTEGER liSize = { 0 };
+            LARGE_INTEGER liOffset = { 0 };
+            liOffset.QuadPart = (LONGLONG)userParams->resumeOffset;
+            if (!GetFileSizeEx(hft, &liSize) ||
+                liSize.QuadPart != liOffset.QuadPart ||
+                !SetFilePointerEx(hft, liOffset, NULL, FILE_BEGIN))
+            {
+                CloseHandle(hft);
+                hft = INVALID_HANDLE_VALUE;
+            }
+        }
+        // If temp file unavailable/mismatched, reset and start over
+        if (INVALID_HANDLE_VALUE == hft)
+        {
+            userParams->resumeOffset    = 0;
+            pbar->szTotalInBytes        = fileSize;
+            pbar->szDownloadedInBytes   = 0;
+            szDownloadedPrev            = 0;
+        }
+    }
+    if (INVALID_HANDLE_VALUE == hft)
+    {
+        hft = CreateFileW(filePathTemp, GENERIC_WRITE, 0, NULL,
+                          CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    }
     if (INVALID_HANDLE_VALUE == hft)
     {
         userParams->errorcode = WW_ERR_CREATE_FILE;

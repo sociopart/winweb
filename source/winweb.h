@@ -142,6 +142,7 @@ typedef struct {
     WW_PROGRESS_CALLBACK progressCallback; /**< Optional progress callback */
     LPVOID pCallbackData;             /**< User context for progress callback */
     const volatile BOOL* pCancelFlag; /**< Optional pointer to a cancellation flag; set to TRUE to abort download */
+    ULONGLONG resumeOffset;           /**< Byte offset to resume from (sends Range: bytes=N-); 0 = start from beginning */
 } WW_PARAMSW;
 
 /**
