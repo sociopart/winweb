@@ -335,7 +335,7 @@ WWQueryExW(
     }
 
     DWORD dwFlags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE |
-                    INTERNET_FLAG_NO_UI;
+                    INTERNET_FLAG_NO_AUTO_REDIRECT | INTERNET_FLAG_NO_UI;
 
     if (INTERNET_SCHEME_HTTPS == urlc.nScheme)
     {
@@ -1635,7 +1635,7 @@ WWQueryExA(
     }
 
     DWORD dwFlags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE |
-                    INTERNET_FLAG_NO_UI;
+                    INTERNET_FLAG_NO_AUTO_REDIRECT | INTERNET_FLAG_NO_UI;
 
     if (INTERNET_SCHEME_HTTPS == urlc.nScheme)
     {
