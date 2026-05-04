@@ -860,11 +860,25 @@ WWProcessHttpW(
         SystemTimeToFileTime(&stLastModified, &ftLastModified);
     }
 
+    // Apply per-request receive timeout so InternetReadFile returns promptly
+    // when the connection is silently dropped (e.g. cable unplugged).
+    if (userParams->receiveTimeoutMs > 0)
+    {
+        DWORD timeout = userParams->receiveTimeoutMs;
+        InternetSetOption(hReq, INTERNET_OPTION_RECEIVE_TIMEOUT, &timeout, sizeof(timeout));
+    }
+
+    // Expose hReq so an external watchdog can InternetCloseHandle it to abort a stalled read.
+    if (userParams->pActiveHandle)
+        *userParams->pActiveHandle = hReq;
+
     // Retrieve the data and write it to disk
-    INT iStatus = WWRetrieveDataW(hReq, lDataLength, &ftLastModified, 
+    INT iStatus = WWRetrieveDataW(hReq, lDataLength, &ftLastModified,
                                   userParams, privateParams);
 
-    // Close the request handle
+    // Clear the stored handle before closing (handle may already be closed by watchdog -- fails silently).
+    if (userParams->pActiveHandle)
+        *userParams->pActiveHandle = NULL;
     InternetCloseHandle(hReq);
 
     return iStatus;

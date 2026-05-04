@@ -143,6 +143,8 @@ typedef struct {
     LPVOID pCallbackData;             /**< User context for progress callback */
     const volatile BOOL* pCancelFlag; /**< Optional pointer to a cancellation flag; set to TRUE to abort download */
     ULONGLONG resumeOffset;           /**< Byte offset to resume from (sends Range: bytes=N-); 0 = start from beginning */
+    DWORD     receiveTimeoutMs;       /**< InternetReadFile timeout in ms; 0 = WinInet default (~30 s) */
+    volatile HINTERNET* pActiveHandle; /**< If non-NULL, WinWeb stores the active request handle here so external code can InternetCloseHandle it to abort a stalled read */
 } WW_PARAMSW;
 
 /**
