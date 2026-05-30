@@ -7,7 +7,7 @@
  */
 
 #pragma once
-#include "winweb.h"
+#include "../../source/winweb.h"
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -81,15 +81,31 @@ public:
                           const std::string& verb,
                           const void* body = nullptr,
                           DWORD bodySize = 0,
-                          const std::string& contentType = "")
+                          const std::string& contentType = "",
+                          const std::string& headers = "",
+                          DWORD timeoutMs = 0)
     {
         std::wstring wurl  = s2w(url);
         std::wstring wverb = s2w(verb);
         std::wstring wct   = s2w(contentType);
+        std::wstring whdr  = s2w(headers);
+
+        WW_REQUESTW request{};
+        request.url              = wurl.c_str();
+        request.verb             = wverb.c_str();
+        request.userAgent        = WW_DEFAULT_USER_AGENTW;
+        request.contentType      = wct.empty() ? nullptr : wct.c_str();
+        request.body             = body;
+        request.bodySize         = bodySize;
+        request.headers          = whdr.empty() ? nullptr : whdr.c_str();
+        request.maxRedirectLimit = WW_DEFAULT_REDIRECT_LIMIT;
+        request.logEnabled       = FALSE;
+        request.connectTimeoutMs = timeoutMs;
+        request.sendTimeoutMs    = timeoutMs;
+        request.receiveTimeoutMs = timeoutMs;
 
         WW_RESPONSEW raw{};
-        WWQueryW(wurl.c_str(), wverb.c_str(), body, bodySize,
-                 wct.empty() ? nullptr : wct.c_str(), &raw);
+        WWQueryExW(&request, &raw);
 
         Response out;
         out.statusCode = raw.statusCode;
@@ -105,15 +121,69 @@ public:
     static Response Query(const std::string& url,
                           const std::string& verb,
                           const std::vector<uint8_t>& body,
-                          const std::string& contentType = "")
+                          const std::string& contentType = "",
+                          const std::string& headers = "",
+                          DWORD timeoutMs = 0)
     {
-        return Query(url, verb, body.data(), static_cast<DWORD>(body.size()), contentType);
+        return Query(url, verb, body.data(), static_cast<DWORD>(body.size()),
+                     contentType, headers, timeoutMs);
     }
 
     /** Query with full control via WW_REQUESTW. Response must be freed with WWFreeResponseW. */
     static int QueryEx(WW_REQUESTW& request, WW_RESPONSEW& response)
     {
         return WWQueryExW(&request, &response);
+    }
+
+    /** Return remote Content-Length via HEAD, following redirects. */
+    static bool GetRemoteFileSize(const std::string& url,
+                                  size_t& outSize,
+                                  DWORD timeoutMs = 5000)
+    {
+        ULONGLONG remoteSize = 0;
+        std::wstring wurl = s2w(url);
+        if (WWGetRemoteFileSizeW(wurl.c_str(), &remoteSize, timeoutMs) != WW_SUCCESS)
+            return false;
+
+        outSize = static_cast<size_t>(remoteSize);
+        return true;
+    }
+
+    /** Ping host via ICMP. Returns round-trip time in ms, or 0 on failure. */
+    static int Ping(const std::string& host, DWORD timeoutMs = 1000)
+    {
+        WSADATA wsa{};
+        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
+            return 0;
+
+        addrinfo hints{};
+        hints.ai_family = AF_INET;
+        addrinfo* res = nullptr;
+        if (getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0 || !res)
+        {
+            WSACleanup();
+            return 0;
+        }
+
+        DWORD ip = reinterpret_cast<sockaddr_in*>(res->ai_addr)->sin_addr.s_addr;
+        freeaddrinfo(res);
+        WSACleanup();
+
+        HANDLE hIcmp = IcmpCreateFile();
+        if (hIcmp == INVALID_HANDLE_VALUE)
+            return 0;
+
+        char sendData[32] = {};
+        DWORD replySize = sizeof(ICMP_ECHO_REPLY) + sizeof(sendData) + 8;
+        std::vector<BYTE> replyBuf(replySize);
+
+        DWORD sent = IcmpSendEcho(hIcmp, ip, sendData, sizeof(sendData),
+                                  nullptr, replyBuf.data(), replySize, timeoutMs);
+        IcmpCloseHandle(hIcmp);
+
+        if (sent == 0)
+            return 0;
+        return static_cast<int>(reinterpret_cast<ICMP_ECHO_REPLY*>(replyBuf.data())->RoundTripTime);
     }
 
 private:
@@ -126,4 +196,5 @@ private:
         MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, result.data(), n);
         return result;
     }
+
 };

@@ -12,6 +12,7 @@
 /****************************** MAIN DEFINITIONS ******************************/
 #include "winweb.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <wchar.h>
 
 /**
@@ -116,7 +117,7 @@ WWProcessFtpW(URL_COMPONENTSW* ptrUrlC, HINTERNET hConn,
 WW_PRIVATE
 INT
 WWRetrieveDataW(HINTERNET hFile, LONGLONG size,
-                CONST FILETIME* pftLastModified,
+                const FILETIME* pftLastModified,
                 WW_PARAMSW* userParams,
                 WW_PRIVATEPARAMSW* privateParams);
 
@@ -131,13 +132,33 @@ WWLogW(BOOL logEnabled, INT msgType, LPCWSTR displayStr);
 
 WW_PRIVATE
 INT
-WWGetSizeUnitW(DOUBLE sizeValue);
+WWGetSizeUnitW(double sizeValue);
+
+WW_PRIVATE
+BOOL
+WWIsRedirectStatus(DWORD statusCode);
+
+WW_PRIVATE
+BOOL
+WWBuildRequestPathW(const URL_COMPONENTSW* ptrUrlC, LPWSTR outPath, DWORD outPathCch);
+
+WW_PRIVATE
+BOOL
+WWBuildRequestPathA(const URL_COMPONENTSA* ptrUrlC, LPSTR outPath, DWORD outPathCch);
+
+WW_PRIVATE
+BOOL
+WWResolveRedirectW(LPCWSTR baseUrl, LPCWSTR location, LPWSTR outUrl, DWORD outUrlCch);
+
+WW_PRIVATE
+BOOL
+WWResolveRedirectA(LPCSTR baseUrl, LPCSTR location, LPSTR outUrl, DWORD outUrlCch);
 // generic
 
 WW_PRIVATE
 BOOL
 WWIsFileModified(HANDLE hFileN, LONGLONG fileSize,
-                 CONST FILETIME* pftLastWriteTime);
+                 const FILETIME* pftLastWriteTime);
 
 /******************************** PUBLIC API **********************************/
 
@@ -174,7 +195,7 @@ WWDownloadW(
     };
 
     // Extract filename and crop dstPath to needed states.
-    CONST WCHAR* extractedFileName = wcsrchr(fullFilePath, L'\\') + 1;
+    const WCHAR* extractedFileName = wcsrchr(fullFilePath, L'\\') + 1;
     size_t dirPathLength = extractedFileName - fullFilePath;
     WCHAR* newPath = (WCHAR*)malloc(dirPathLength + 1);
     if (newPath == NULL)
@@ -355,6 +376,19 @@ WWQueryExW(
         return WW_FAILURE;
     }
 
+    if (request->connectTimeoutMs > 0) {
+        InternetSetOptionW(hReq, INTERNET_OPTION_CONNECT_TIMEOUT,
+                           &request->connectTimeoutMs, sizeof(request->connectTimeoutMs));
+    }
+    if (request->sendTimeoutMs > 0) {
+        InternetSetOptionW(hReq, INTERNET_OPTION_SEND_TIMEOUT,
+                        &request->sendTimeoutMs, sizeof(request->sendTimeoutMs));
+    }
+    if (request->receiveTimeoutMs > 0) {
+        InternetSetOptionW(hReq, INTERNET_OPTION_RECEIVE_TIMEOUT,
+                           &request->receiveTimeoutMs, sizeof(request->receiveTimeoutMs));
+    }
+    
     // Build headers string
     WCHAR headerBuf[2048] = L"";
     if (request->contentType != NULL)
@@ -492,6 +526,180 @@ WWQueryExW(
     InternetCloseHandle(hInet);
 
     return WW_SUCCESS;
+}
+
+INT
+WWGetRemoteFileSizeW(
+    LPCWSTR url,
+    ULONGLONG* outSize,
+    DWORD timeoutMs
+)
+{
+    if (NULL == url || NULL == outSize)
+    {
+        return WW_FAILURE;
+    }
+
+    *outSize = 0;
+
+    WCHAR currentUrl[INTERNET_MAX_URL_LENGTH] = L"";
+    if (wcslen(url) + 1 > WW_COUNTOF(currentUrl))
+    {
+        return WW_FAILURE;
+    }
+    wcsncpy(currentUrl, url, WW_COUNTOF(currentUrl));
+    currentUrl[WW_COUNTOF(currentUrl) - 1] = L'\0';
+
+    for (UINT redirects = 0; redirects <= WW_DEFAULT_REDIRECT_LIMIT; ++redirects)
+    {
+        WCHAR scheme[INTERNET_MAX_SCHEME_LENGTH] = L"";
+        WCHAR hostname[INTERNET_MAX_HOST_NAME_LENGTH] = L"";
+        WCHAR username[INTERNET_MAX_USER_NAME_LENGTH] = L"";
+        WCHAR password[INTERNET_MAX_PASSWORD_LENGTH] = L"";
+        WCHAR urlpath[INTERNET_MAX_PATH_LENGTH] = L"";
+        WCHAR extraInfo[INTERNET_MAX_PATH_LENGTH] = L"";
+
+        URL_COMPONENTSW urlc = {
+            sizeof(urlc),
+            scheme, WW_COUNTOF(scheme),
+            INTERNET_SCHEME_DEFAULT,
+            hostname, WW_COUNTOF(hostname),
+            0,
+            username, WW_COUNTOF(username),
+            password, WW_COUNTOF(password),
+            urlpath, WW_COUNTOF(urlpath),
+            extraInfo, WW_COUNTOF(extraInfo)
+        };
+
+        if (FALSE == InternetCrackUrlW(currentUrl, 0, 0, &urlc))
+        {
+            return WW_FAILURE;
+        }
+
+        if (urlc.nScheme != INTERNET_SCHEME_HTTP &&
+            urlc.nScheme != INTERNET_SCHEME_HTTPS)
+        {
+            return WW_FAILURE;
+        }
+
+        HINTERNET hInet = InternetOpenW(WW_DEFAULT_USER_AGENTW,
+                                        INTERNET_OPEN_TYPE_PRECONFIG,
+                                        NULL, NULL, 0);
+        if (NULL == hInet)
+        {
+            return WW_FAILURE;
+        }
+
+        HINTERNET hConn = InternetConnectW(hInet, urlc.lpszHostName, urlc.nPort,
+                                           urlc.lpszUserName, urlc.lpszPassword,
+                                           INTERNET_SERVICE_HTTP, 0, 0);
+        if (NULL == hConn)
+        {
+            InternetCloseHandle(hInet);
+            return WW_FAILURE;
+        }
+
+        DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE |
+                      INTERNET_FLAG_NO_COOKIES | INTERNET_FLAG_NO_UI |
+                      INTERNET_FLAG_NO_AUTO_REDIRECT;
+        if (INTERNET_SCHEME_HTTPS == urlc.nScheme)
+        {
+            flags |= INTERNET_FLAG_SECURE;
+        }
+
+        WCHAR requestPath[INTERNET_MAX_URL_LENGTH] = L"";
+        if (FALSE == WWBuildRequestPathW(&urlc, requestPath, WW_COUNTOF(requestPath)))
+        {
+            InternetCloseHandle(hConn);
+            InternetCloseHandle(hInet);
+            return WW_FAILURE;
+        }
+
+        LPCWSTR acceptTypes[] = { L"*/*", NULL };
+        HINTERNET hReq = HttpOpenRequestW(hConn, L"HEAD", requestPath,
+                                          NULL, NULL, acceptTypes, flags, 0);
+        if (NULL == hReq)
+        {
+            InternetCloseHandle(hConn);
+            InternetCloseHandle(hInet);
+            return WW_FAILURE;
+        }
+
+        if (timeoutMs > 0)
+        {
+            InternetSetOptionW(hReq, INTERNET_OPTION_CONNECT_TIMEOUT,
+                               &timeoutMs, sizeof(timeoutMs));
+            InternetSetOptionW(hReq, INTERNET_OPTION_SEND_TIMEOUT,
+                               &timeoutMs, sizeof(timeoutMs));
+            InternetSetOptionW(hReq, INTERNET_OPTION_RECEIVE_TIMEOUT,
+                               &timeoutMs, sizeof(timeoutMs));
+        }
+
+        BOOL sendOk = HttpSendRequestW(hReq, NULL, 0, NULL, 0);
+        DWORD statusCode = 0;
+        DWORD statusLen = sizeof(statusCode);
+        BOOL statusOk = sendOk && HttpQueryInfoW(
+            hReq,
+            HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
+            &statusCode,
+            &statusLen,
+            NULL
+        );
+
+        if (statusOk && statusCode >= 200 && statusCode < 300)
+        {
+            WCHAR lengthBuf[64] = L"";
+            DWORD lengthLen = sizeof(lengthBuf);
+            BOOL ok = FALSE;
+
+            if (HttpQueryInfoW(hReq, HTTP_QUERY_CONTENT_LENGTH,
+                               lengthBuf, &lengthLen, NULL))
+            {
+                ULONGLONG parsed = _wcstoui64(lengthBuf, NULL, 10);
+                if (parsed > 0)
+                {
+                    *outSize = parsed;
+                    ok = TRUE;
+                }
+            }
+
+            InternetCloseHandle(hReq);
+            InternetCloseHandle(hConn);
+            InternetCloseHandle(hInet);
+            return ok ? WW_SUCCESS : WW_FAILURE;
+        }
+
+        if (statusOk && WWIsRedirectStatus(statusCode))
+        {
+            WCHAR location[INTERNET_MAX_URL_LENGTH] = L"";
+            DWORD locationLen = sizeof(location);
+            BOOL haveLocation = HttpQueryInfoW(hReq, HTTP_QUERY_LOCATION,
+                                               location, &locationLen, NULL);
+
+            InternetCloseHandle(hReq);
+            InternetCloseHandle(hConn);
+            InternetCloseHandle(hInet);
+
+            if (FALSE == haveLocation)
+            {
+                return WW_FAILURE;
+            }
+
+            if (FALSE == WWResolveRedirectW(currentUrl, location,
+                                            currentUrl, WW_COUNTOF(currentUrl)))
+            {
+                return WW_FAILURE;
+            }
+            continue;
+        }
+
+        InternetCloseHandle(hReq);
+        InternetCloseHandle(hConn);
+        InternetCloseHandle(hInet);
+        return WW_FAILURE;
+    }
+
+    return WW_FAILURE;
 }
 
 VOID
@@ -699,7 +907,7 @@ WWProcessHttpW(
     DWORD rangeHeaderLen  = 0;
     if (userParams->resumeOffset > 0)
     {
-        _snwprintf_s(rangeHeader, _countof(rangeHeader), _TRUNCATE,
+        _snwprintf_s(rangeHeader, WW_COUNTOF(rangeHeader), _TRUNCATE,
                      L"Range: bytes=%I64u-\r\n", userParams->resumeOffset);
         rangeHeaderLen = (DWORD)wcslen(rangeHeader);
     }
@@ -981,7 +1189,7 @@ INT
 WWRetrieveDataW(
                 HINTERNET hFile, 
                 LONGLONG fileSize, 
-                CONST FILETIME* pftLastModified,
+                const FILETIME* pftLastModified,
                 WW_PARAMSW* userParams,
                 WW_PRIVATEPARAMSW* privateParams
                )
@@ -1078,8 +1286,8 @@ WWRetrieveDataW(
     st0 = st;
     st1 = st;
 
-    DOUBLE averageSpeed = 0.0;
-    DOUBLE remainingSize = (DOUBLE)pbar->szTotalInBytes;
+    double averageSpeed = 0.0;
+    double remainingSize = (double)pbar->szTotalInBytes;
     LPCWSTR fileNamePtr = NULL;
     if (userParams->progressBarFlags & WW_PB_FILENAME)
     {
@@ -1151,9 +1359,9 @@ WWRetrieveDataW(
             ((PULARGE_INTEGER)&st0)->QuadPart;
         if ((difftime >= 10000000) || ((ratio != 0) && (ratio % 10000 == 0)))
         {
-            DOUBLE diffsize =
-                (DOUBLE)(pbar->szDownloadedInBytes - szDownloadedPrev) /
-                ((DOUBLE)difftime / (DOUBLE)10000000);
+            double diffsize =
+                (double)(pbar->szDownloadedInBytes - szDownloadedPrev) /
+                ((double)difftime / (double)10000000);
 
             pbar->ulTimeElapsedInSecs = ((PULARGE_INTEGER)&st1)->QuadPart - \
                 ((PULARGE_INTEGER)&st)->QuadPart;
@@ -1164,13 +1372,17 @@ WWRetrieveDataW(
             st0 = st1;
 
 
-            INT dwnSizeUnit = WWGetSizeUnitW((DOUBLE)pbar->szDownloadedInBytes);
-            INT totlSizeUnit = WWGetSizeUnitW((DOUBLE)pbar->szTotalInBytes);
+            INT dwnSizeUnit = WWGetSizeUnitW((double)pbar->szDownloadedInBytes);
+            INT totlSizeUnit = WWGetSizeUnitW((double)pbar->szTotalInBytes);
 
             // ETA calculation
-            DOUBLE downloadSpeed = diffsize / (diffsec != 0 ? diffsec : 1);
-            ULONGLONG remainingSize = pbar->szTotalInBytes - pbar->szDownloadedInBytes;
-            pbar->dETAInSecs = remainingSize / downloadSpeed;
+            double downloadSpeed = diffsize / (diffsec != 0 ? diffsec : 1);
+            ULONGLONG remainingSize = (pbar->szTotalInBytes > pbar->szDownloadedInBytes)
+                ? (pbar->szTotalInBytes - pbar->szDownloadedInBytes)
+                : 0;
+            pbar->dETAInSecs = (pbar->szTotalInBytes > 0 && downloadSpeed > 0.0)
+                ? (remainingSize / downloadSpeed)
+                : 0.0;
             INT etaHours = (INT)(pbar->dETAInSecs / 3600);
             INT etaMinutes = (INT)((pbar->dETAInSecs - (etaHours * 3600)) / 60);
             INT etaSeconds = (INT)(pbar->dETAInSecs - (etaHours * 3600) - (etaMinutes * 60));
@@ -1294,7 +1506,7 @@ WWMakeDownloadPathW(
 WW_PRIVATE
 INT
 WWGetSizeUnitW(
-                DOUBLE sizeValue
+                double sizeValue
               )
 {
     INT sizeUnit = 0;
@@ -1412,10 +1624,10 @@ WWLogW(
 WW_PRIVATE
 BOOL
 WWIsFileModified(
-                  HANDLE hFileN, 
-                  LONGLONG fileSize,
-                  CONST FILETIME* pftLastWriteTime
-                )
+    HANDLE hFileN,
+    LONGLONG fileSize,
+    const FILETIME* pftLastWriteTime
+)
 {
     BOOL bStatus = (INVALID_HANDLE_VALUE == hFileN);
     if (!bStatus)
@@ -1669,6 +1881,19 @@ WWQueryExA(
         return WW_FAILURE;
     }
 
+    if (request->connectTimeoutMs > 0) {
+        InternetSetOptionA(hReq, INTERNET_OPTION_CONNECT_TIMEOUT,
+                           &request->connectTimeoutMs, sizeof(request->connectTimeoutMs));
+    }
+    if (request->sendTimeoutMs > 0) {
+        InternetSetOptionA(hReq, INTERNET_OPTION_SEND_TIMEOUT,
+                           &request->sendTimeoutMs, sizeof(request->sendTimeoutMs));
+    }
+    if (request->receiveTimeoutMs > 0) {
+        InternetSetOptionA(hReq, INTERNET_OPTION_RECEIVE_TIMEOUT,
+                           &request->receiveTimeoutMs, sizeof(request->receiveTimeoutMs));
+    }
+
     // Build headers string
     CHAR headerBuf[2048] = "";
     if (request->contentType != NULL)
@@ -1808,6 +2033,180 @@ WWQueryExA(
     return WW_SUCCESS;
 }
 
+INT
+WWGetRemoteFileSizeA(
+    LPCSTR url,
+    ULONGLONG* outSize,
+    DWORD timeoutMs
+)
+{
+    if (NULL == url || NULL == outSize)
+    {
+        return WW_FAILURE;
+    }
+
+    *outSize = 0;
+
+    CHAR currentUrl[INTERNET_MAX_URL_LENGTH] = "";
+    if (strlen(url) + 1 > WW_COUNTOF(currentUrl))
+    {
+        return WW_FAILURE;
+    }
+    strncpy(currentUrl, url, WW_COUNTOF(currentUrl));
+    currentUrl[WW_COUNTOF(currentUrl) - 1] = '\0';
+
+    for (UINT redirects = 0; redirects <= WW_DEFAULT_REDIRECT_LIMIT; ++redirects)
+    {
+        CHAR scheme[INTERNET_MAX_SCHEME_LENGTH] = "";
+        CHAR hostname[INTERNET_MAX_HOST_NAME_LENGTH] = "";
+        CHAR username[INTERNET_MAX_USER_NAME_LENGTH] = "";
+        CHAR password[INTERNET_MAX_PASSWORD_LENGTH] = "";
+        CHAR urlpath[INTERNET_MAX_PATH_LENGTH] = "";
+        CHAR extraInfo[INTERNET_MAX_PATH_LENGTH] = "";
+
+        URL_COMPONENTSA urlc = {
+            sizeof(urlc),
+            scheme, WW_COUNTOF(scheme),
+            INTERNET_SCHEME_DEFAULT,
+            hostname, WW_COUNTOF(hostname),
+            0,
+            username, WW_COUNTOF(username),
+            password, WW_COUNTOF(password),
+            urlpath, WW_COUNTOF(urlpath),
+            extraInfo, WW_COUNTOF(extraInfo)
+        };
+
+        if (FALSE == InternetCrackUrlA(currentUrl, 0, 0, &urlc))
+        {
+            return WW_FAILURE;
+        }
+
+        if (urlc.nScheme != INTERNET_SCHEME_HTTP &&
+            urlc.nScheme != INTERNET_SCHEME_HTTPS)
+        {
+            return WW_FAILURE;
+        }
+
+        HINTERNET hInet = InternetOpenA(WW_DEFAULT_USER_AGENTA,
+                                        INTERNET_OPEN_TYPE_PRECONFIG,
+                                        NULL, NULL, 0);
+        if (NULL == hInet)
+        {
+            return WW_FAILURE;
+        }
+
+        HINTERNET hConn = InternetConnectA(hInet, urlc.lpszHostName, urlc.nPort,
+                                           urlc.lpszUserName, urlc.lpszPassword,
+                                           INTERNET_SERVICE_HTTP, 0, 0);
+        if (NULL == hConn)
+        {
+            InternetCloseHandle(hInet);
+            return WW_FAILURE;
+        }
+
+        DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE |
+                      INTERNET_FLAG_NO_COOKIES | INTERNET_FLAG_NO_UI |
+                      INTERNET_FLAG_NO_AUTO_REDIRECT;
+        if (INTERNET_SCHEME_HTTPS == urlc.nScheme)
+        {
+            flags |= INTERNET_FLAG_SECURE;
+        }
+
+        CHAR requestPath[INTERNET_MAX_URL_LENGTH] = "";
+        if (FALSE == WWBuildRequestPathA(&urlc, requestPath, WW_COUNTOF(requestPath)))
+        {
+            InternetCloseHandle(hConn);
+            InternetCloseHandle(hInet);
+            return WW_FAILURE;
+        }
+
+        LPCSTR acceptTypes[] = { "*/*", NULL };
+        HINTERNET hReq = HttpOpenRequestA(hConn, "HEAD", requestPath,
+                                          NULL, NULL, acceptTypes, flags, 0);
+        if (NULL == hReq)
+        {
+            InternetCloseHandle(hConn);
+            InternetCloseHandle(hInet);
+            return WW_FAILURE;
+        }
+
+        if (timeoutMs > 0)
+        {
+            InternetSetOptionA(hReq, INTERNET_OPTION_CONNECT_TIMEOUT,
+                               &timeoutMs, sizeof(timeoutMs));
+            InternetSetOptionA(hReq, INTERNET_OPTION_SEND_TIMEOUT,
+                               &timeoutMs, sizeof(timeoutMs));
+            InternetSetOptionA(hReq, INTERNET_OPTION_RECEIVE_TIMEOUT,
+                               &timeoutMs, sizeof(timeoutMs));
+        }
+
+        BOOL sendOk = HttpSendRequestA(hReq, NULL, 0, NULL, 0);
+        DWORD statusCode = 0;
+        DWORD statusLen = sizeof(statusCode);
+        BOOL statusOk = sendOk && HttpQueryInfoA(
+            hReq,
+            HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
+            &statusCode,
+            &statusLen,
+            NULL
+        );
+
+        if (statusOk && statusCode >= 200 && statusCode < 300)
+        {
+            CHAR lengthBuf[64] = "";
+            DWORD lengthLen = sizeof(lengthBuf);
+            BOOL ok = FALSE;
+
+            if (HttpQueryInfoA(hReq, HTTP_QUERY_CONTENT_LENGTH,
+                               lengthBuf, &lengthLen, NULL))
+            {
+                ULONGLONG parsed = _strtoui64(lengthBuf, NULL, 10);
+                if (parsed > 0)
+                {
+                    *outSize = parsed;
+                    ok = TRUE;
+                }
+            }
+
+            InternetCloseHandle(hReq);
+            InternetCloseHandle(hConn);
+            InternetCloseHandle(hInet);
+            return ok ? WW_SUCCESS : WW_FAILURE;
+        }
+
+        if (statusOk && WWIsRedirectStatus(statusCode))
+        {
+            CHAR location[INTERNET_MAX_URL_LENGTH] = "";
+            DWORD locationLen = sizeof(location);
+            BOOL haveLocation = HttpQueryInfoA(hReq, HTTP_QUERY_LOCATION,
+                                               location, &locationLen, NULL);
+
+            InternetCloseHandle(hReq);
+            InternetCloseHandle(hConn);
+            InternetCloseHandle(hInet);
+
+            if (FALSE == haveLocation)
+            {
+                return WW_FAILURE;
+            }
+
+            if (FALSE == WWResolveRedirectA(currentUrl, location,
+                                            currentUrl, WW_COUNTOF(currentUrl)))
+            {
+                return WW_FAILURE;
+            }
+            continue;
+        }
+
+        InternetCloseHandle(hReq);
+        InternetCloseHandle(hConn);
+        InternetCloseHandle(hInet);
+        return WW_FAILURE;
+    }
+
+    return WW_FAILURE;
+}
+
 VOID
 WWFreeResponseA(
     WW_RESPONSEA* response
@@ -1837,7 +2236,7 @@ WWProcessHttpA(URL_COMPONENTSA* ptrUrlC, HINTERNET hConn,
 WW_PRIVATE
 INT
 WWRetrieveDataA(HINTERNET hFile, LONGLONG size,
-                CONST FILETIME* pftLastModified,
+                const FILETIME* pftLastModified,
                 WW_PARAMSA* userParams,
                 WW_PRIVATEPARAMSA* privateParams);
 
@@ -2248,7 +2647,7 @@ INT
 WWRetrieveDataA(
     HINTERNET hFile,
     LONGLONG fileSize,
-    CONST FILETIME* pftLastModified,
+    const FILETIME* pftLastModified,
     WW_PARAMSA* userParams,
     WW_PRIVATEPARAMSA* privateParams
 )
@@ -2383,9 +2782,9 @@ WWRetrieveDataA(
             ((PULARGE_INTEGER)&st0)->QuadPart;
         if ((difftime >= 10000000) || ((ratio != 0) && (ratio % 10000 == 0)))
         {
-            DOUBLE diffsize =
-                (DOUBLE)(pbar->szDownloadedInBytes - szDownloadedPrev) /
-                ((DOUBLE)difftime / (DOUBLE)10000000);
+            double diffsize =
+                (double)(pbar->szDownloadedInBytes - szDownloadedPrev) /
+                ((double)difftime / (double)10000000);
 
             pbar->ulTimeElapsedInSecs = ((PULARGE_INTEGER)&st1)->QuadPart -
                 ((PULARGE_INTEGER)&st)->QuadPart;
@@ -2395,12 +2794,16 @@ WWRetrieveDataA(
 
             st0 = st1;
 
-            INT dwnSizeUnit = WWGetSizeUnitW((DOUBLE)pbar->szDownloadedInBytes);
-            INT totlSizeUnit = WWGetSizeUnitW((DOUBLE)pbar->szTotalInBytes);
+            INT dwnSizeUnit = WWGetSizeUnitW((double)pbar->szDownloadedInBytes);
+            INT totlSizeUnit = WWGetSizeUnitW((double)pbar->szTotalInBytes);
 
-            DOUBLE downloadSpeed = diffsize / (diffsec != 0 ? diffsec : 1);
-            ULONGLONG remainingSize = pbar->szTotalInBytes - pbar->szDownloadedInBytes;
-            pbar->dETAInSecs = remainingSize / downloadSpeed;
+            double downloadSpeed = diffsize / (diffsec != 0 ? diffsec : 1);
+            ULONGLONG remainingSize = (pbar->szTotalInBytes > pbar->szDownloadedInBytes)
+                ? (pbar->szTotalInBytes - pbar->szDownloadedInBytes)
+                : 0;
+            pbar->dETAInSecs = (pbar->szTotalInBytes > 0 && downloadSpeed > 0.0)
+                ? (remainingSize / downloadSpeed)
+                : 0.0;
             INT etaHours = (INT)(pbar->dETAInSecs / 3600);
             INT etaMinutes = (INT)((pbar->dETAInSecs - (etaHours * 3600)) / 60);
             INT etaSeconds = (INT)(pbar->dETAInSecs - (etaHours * 3600) - (etaMinutes * 60));

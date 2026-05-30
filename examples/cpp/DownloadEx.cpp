@@ -5,7 +5,7 @@
  * progress callback.  Note: WW_PARAMSW uses wide string members directly.
  */
 
-#include "../../source/winweb.hpp"
+#include "../../wrappers/cpp/winweb.hpp"
 #include <cstdio>
 
 static void onProgress(const WWPBARINFO* info, LPVOID /*userData*/)

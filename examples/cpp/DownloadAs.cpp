@@ -5,7 +5,7 @@
  * filename (directory and filename passed separately).
  */
 
-#include "../../source/winweb.hpp"
+#include "../../wrappers/cpp/winweb.hpp"
 #include <cstdio>
 
 int main()

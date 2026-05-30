@@ -6,7 +6,7 @@
  * must be freed manually with WWFreeResponseW.
  */
 
-#include "../../source/winweb.hpp"
+#include "../../wrappers/cpp/winweb.hpp"
 #include <cstdio>
 
 int main()

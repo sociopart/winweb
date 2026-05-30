@@ -15,14 +15,23 @@
 #ifndef WINWEB_H
 #define WINWEB_H
 
-#ifdef __cplusplus
-extern "C" {
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
 #endif
-
+#include <WinSock2.h>
 #include <Windows.h>
 #include <WinInet.h>
+#include <Ws2tcpip.h>
+#include <iphlpapi.h>
+#include <Icmpapi.h>
 #ifdef _MSC_VER
 #pragma comment(lib, "wininet.lib")
+#pragma comment(lib, "Ws2_32.lib")
+#pragma comment(lib, "iphlpapi.lib")
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 /**
@@ -88,7 +97,7 @@ typedef struct {
     ULONGLONG ulTimeElapsedInSecs;
     ULONGLONG szDownloadedInBytes;  /**< Size of downloaded data in bytes */
     ULONGLONG szTotalInBytes;       /**< Total size of the data in bytes */
-    DOUBLE dETAInSecs;
+    double dETAInSecs;
 } WWPBARINFO;
 
 /**
@@ -97,7 +106,7 @@ typedef struct {
  * @param pProgressData Pointer to progress bar information.
  * @param pUserData     User-provided context pointer.
  */
-typedef VOID (*WW_PROGRESS_CALLBACK)(CONST WWPBARINFO* pProgressData,
+typedef VOID (*WW_PROGRESS_CALLBACK)(const WWPBARINFO* pProgressData,
                                      LPVOID pUserData);
 
 /**
@@ -180,6 +189,9 @@ typedef struct {
     LPCSTR headers;                   /**< Additional custom headers */
     UINT maxRedirectLimit;            /**< Maximum redirect limit */
     BOOL logEnabled;                  /**< Flag to enable/disable logging */
+    DWORD connectTimeoutMs;           /**< Connect timeout in ms; 0 = WinINet default */
+    DWORD sendTimeoutMs;              /**< Send timeout in ms; 0 = WinINet default */
+    DWORD receiveTimeoutMs;           /**< Receive timeout in ms; 0 = WinINet default */
 } WW_REQUESTA;
 
 /**
@@ -195,6 +207,9 @@ typedef struct {
     LPCWSTR headers;                  /**< Additional custom headers */
     UINT maxRedirectLimit;            /**< Maximum redirect limit */
     BOOL logEnabled;                  /**< Flag to enable/disable logging */
+    DWORD connectTimeoutMs;           /**< Connect timeout in ms; 0 = WinINet default */
+    DWORD sendTimeoutMs;              /**< Send timeout in ms; 0 = WinINet default */
+    DWORD receiveTimeoutMs;           /**< Receive timeout in ms; 0 = WinINet default */
 } WW_REQUESTW;
 
 /**
@@ -280,6 +295,16 @@ INT WWQueryExA(WW_REQUESTA* request, WW_RESPONSEA* response);
  * @brief Perform an HTTP request with extended parameters (Unicode version).
  */
 INT WWQueryExW(WW_REQUESTW* request, WW_RESPONSEW* response);
+
+/**
+ * @brief Return remote Content-Length via HEAD, following redirects (ANSI version).
+ */
+INT WWGetRemoteFileSizeA(LPCSTR url, ULONGLONG* outSize, DWORD timeoutMs);
+
+/**
+ * @brief Return remote Content-Length via HEAD, following redirects (Unicode version).
+ */
+INT WWGetRemoteFileSizeW(LPCWSTR url, ULONGLONG* outSize, DWORD timeoutMs);
 
 /**
  * @brief Free response data allocated by query functions (ANSI version).
