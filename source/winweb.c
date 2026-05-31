@@ -1521,6 +1521,183 @@ WWGetSizeUnitW(
     return sizeUnit;
 }
 
+WW_PRIVATE
+BOOL
+WWIsRedirectStatus(
+    DWORD statusCode
+)
+{
+    return statusCode == HTTP_STATUS_MOVED ||
+           statusCode == HTTP_STATUS_REDIRECT ||
+           statusCode == HTTP_STATUS_REDIRECT_METHOD ||
+           statusCode == HTTP_STATUS_REDIRECT_KEEP_VERB ||
+           statusCode == 308;
+}
+
+WW_PRIVATE
+BOOL
+WWBuildRequestPathW(
+    const URL_COMPONENTSW* ptrUrlC,
+    LPWSTR outPath,
+    DWORD outPathCch
+)
+{
+    if (NULL == ptrUrlC || NULL == outPath || 0 == outPathCch)
+    {
+        return FALSE;
+    }
+
+    outPath[0] = L'\0';
+
+    if (NULL == ptrUrlC->lpszUrlPath || 0 == ptrUrlC->dwUrlPathLength)
+    {
+        if (outPathCch < 2)
+        {
+            return FALSE;
+        }
+        wcscpy(outPath, L"/");
+    }
+    else
+    {
+        if (ptrUrlC->dwUrlPathLength + 1 > outPathCch)
+        {
+            return FALSE;
+        }
+        wcsncpy(outPath, ptrUrlC->lpszUrlPath, ptrUrlC->dwUrlPathLength + 1);
+        outPath[ptrUrlC->dwUrlPathLength] = L'\0';
+    }
+
+    if (NULL != ptrUrlC->lpszExtraInfo && ptrUrlC->dwExtraInfoLength > 0)
+    {
+        size_t pathLen = wcslen(outPath);
+        if (pathLen + ptrUrlC->dwExtraInfoLength + 1 > outPathCch)
+        {
+            return FALSE;
+        }
+        wcsncpy(outPath + pathLen, ptrUrlC->lpszExtraInfo,
+                ptrUrlC->dwExtraInfoLength + 1);
+        outPath[pathLen + ptrUrlC->dwExtraInfoLength] = L'\0';
+    }
+
+    return TRUE;
+}
+
+WW_PRIVATE
+BOOL
+WWBuildRequestPathA(
+    const URL_COMPONENTSA* ptrUrlC,
+    LPSTR outPath,
+    DWORD outPathCch
+)
+{
+    if (NULL == ptrUrlC || NULL == outPath || 0 == outPathCch)
+    {
+        return FALSE;
+    }
+
+    outPath[0] = '\0';
+
+    if (NULL == ptrUrlC->lpszUrlPath || 0 == ptrUrlC->dwUrlPathLength)
+    {
+        if (outPathCch < 2)
+        {
+            return FALSE;
+        }
+        strcpy(outPath, "/");
+    }
+    else
+    {
+        if (ptrUrlC->dwUrlPathLength + 1 > outPathCch)
+        {
+            return FALSE;
+        }
+        strncpy(outPath, ptrUrlC->lpszUrlPath, ptrUrlC->dwUrlPathLength + 1);
+        outPath[ptrUrlC->dwUrlPathLength] = '\0';
+    }
+
+    if (NULL != ptrUrlC->lpszExtraInfo && ptrUrlC->dwExtraInfoLength > 0)
+    {
+        size_t pathLen = strlen(outPath);
+        if (pathLen + ptrUrlC->dwExtraInfoLength + 1 > outPathCch)
+        {
+            return FALSE;
+        }
+        strncpy(outPath + pathLen, ptrUrlC->lpszExtraInfo,
+                ptrUrlC->dwExtraInfoLength + 1);
+        outPath[pathLen + ptrUrlC->dwExtraInfoLength] = '\0';
+    }
+
+    return TRUE;
+}
+
+WW_PRIVATE
+BOOL
+WWResolveRedirectW(
+    LPCWSTR baseUrl,
+    LPCWSTR location,
+    LPWSTR outUrl,
+    DWORD outUrlCch
+)
+{
+    if (NULL == baseUrl || NULL == location || NULL == outUrl ||
+        0 == outUrlCch)
+    {
+        return FALSE;
+    }
+
+    LPWSTR resolvedUrl = (LPWSTR)malloc(outUrlCch * sizeof(WCHAR));
+    if (NULL == resolvedUrl)
+    {
+        return FALSE;
+    }
+
+    DWORD resolvedUrlCch = outUrlCch;
+    BOOL ok = InternetCombineUrlW(baseUrl, location, resolvedUrl,
+                                  &resolvedUrlCch, 0);
+    if (ok)
+    {
+        wcsncpy(outUrl, resolvedUrl, outUrlCch);
+        outUrl[outUrlCch - 1] = L'\0';
+    }
+
+    free(resolvedUrl);
+    return ok;
+}
+
+WW_PRIVATE
+BOOL
+WWResolveRedirectA(
+    LPCSTR baseUrl,
+    LPCSTR location,
+    LPSTR outUrl,
+    DWORD outUrlCch
+)
+{
+    if (NULL == baseUrl || NULL == location || NULL == outUrl ||
+        0 == outUrlCch)
+    {
+        return FALSE;
+    }
+
+    LPSTR resolvedUrl = (LPSTR)malloc(outUrlCch);
+    if (NULL == resolvedUrl)
+    {
+        return FALSE;
+    }
+
+    DWORD resolvedUrlCch = outUrlCch;
+    BOOL ok = InternetCombineUrlA(baseUrl, location, resolvedUrl,
+                                  &resolvedUrlCch, 0);
+    if (ok)
+    {
+        strncpy(outUrl, resolvedUrl, outUrlCch);
+        outUrl[outUrlCch - 1] = '\0';
+    }
+
+    free(resolvedUrl);
+    return ok;
+}
+
 
 WW_PRIVATE
 VOID 
